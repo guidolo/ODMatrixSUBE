@@ -1,0 +1,64 @@
+#==============================================================================
+# PASO 1: extraccion de los nodos de las calles
+#==============================================================================
+
+def sentido_nodos():
+    inShapeFile = 'CALLES.shp'
+    listPuntos = extraePuntos(inShapeFile)
+    
+    npListaPuntos = np.array(listPuntos)
+    df = pandas.DataFrame(npListaPuntos, columns=['nodos'])
+    df['nodos'] = df['nodos'].astype('str')
+    
+    #gabro todos los nodos en una tabla 
+    sql.write_frame(df, "nodos", consqliteBase )
+
+#==============================================================================
+# PASO 2: creacion de las esquinas
+#==============================================================================
+
+def sentido_esquinas():
+    #me quedo con aquellos nodos que se repiten, por lo que son intersecciones de lineas
+    esquinas = sql.read_frame('select nodos from nodos group by nodos having count(*) > 1', consqliteBase)
+    createShpFromWKT(esquinas['nodos'],'esquinas.shp')
+    esquinas['nodos'] = esquinas['nodos'].astype('str')
+    sql.write_frame(esquinas, "esquinas", consqliteBase )
+
+
+#==============================================================================
+# PASO 3: determinar los esquinas que conforman una ruta 
+#==============================================================================
+
+def sentido_esquinas_ruta():
+    #cargamos una linea
+    lineasCole = sql.read_frame('SELECT linea, ramal, sentido, geom  FROM LineasCole', consqliteBase  )
+    esquinas   = sql.read_frame('SELECT nodos FROM Esquinas', consqliteBase  )
+    
+    
+    #recorro todos las esquinas 
+    for i, Linerow in lineasCole.iterrows():
+    
+        shplLineString = wkt_load(Linerow.GEOM)
+        
+        print('Procesando linea %s, ramal %s, sentido %s' % (Linerow.LINEA, Linerow.RAMAL, Linerow.SENTIDO))
+        
+        EsquinasLineas = pd.DataFrame(columns=['linea','ramal','sentido', 'punto', 'milepost'])
+        x=0
+        #recorro todos las esquinas 
+        for j, row in esquinas.iterrows():
+            
+            #creo la esquina en formato shapely
+            shplEsquina = wkt_load(row.nodos)
+            
+            if shplLineString.intersects(shplEsquina) == True:
+                #calculamos el milepost            
+                milepost = shplLineString.project(shplEsquina, normalized=True)            
+                
+                puntos = pd.Series({'linea':Linerow.LINEA, 'ramal':Linerow.RAMAL, 'sentido':Linerow.SENTIDO, 'punto':row['nodos'], 'milepost':milepost})
+                EsquinasLineas.loc[x]=puntos
+                x=x+1
+        
+        if x > 0:
+            print('     Registros procesados: %i' %x)
+            #guardo las paradas en tabla 
+            sql.write_frame(EsquinasLineas, "EsquinasLineas", consqliteBase, if_exists='append')

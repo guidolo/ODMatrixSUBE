@@ -1,0 +1,141 @@
+Diccionario de tablas
+
+
+/**************************************************************************************************************************************************
+/******************************** THE_LOTES  ***********************************************************************************************************
+/**************************************************************************************************************************************************
+	
+
+ORACLE THE_LOTES.SQL  -- creacion de la tabla the_lotes en oracle. Estan todos los lotes del mes de mayo con usos en colectivo y 6 dias de rezago.
+
+python inicio.py -lote   --> ejecuta el procedimieto de ORACLE THE_LOTE_PROC
+
+	THE_LOTE_PROC.prc: procedimiento que carga todos los lotes en THE_lotes y selecciona 25 al azar por cada linea, ramal
+						luego carga los puntos de control en la tabla PTOCONTROL201505 de los lotes seleccionados
+
+
+THE_LOTES -- tabla en PostgreSQL -- Estan todos los lotes del mes de mayo con usos en colectivo y 6 dias de rezago.
+								 -- Selectted = el campo seleccted es para porcesar el sentido
+											D  -- son los lotes marcados para ser procesados en la estimación del destino
+
+THE_RAMALES.SQL: es un sql de oracle que carga todos los ramales posibles desde la tabla EXP_MOVIMIENTOTARJETA	
+
+/**************************************************************************************************************************************************
+/******************************** SHAPE ***********************************************************************************************************
+/**************************************************************************************************************************************************
+				
+					
+python inicio.py -reco  -->  toma el shape recorridos.shp y la pasa a la tabla lineascole
+
+python inicio.py -dist  --> inserta en la tabla distancias
+							para cada una de los recorridos de la tabla "lineascole"
+								recupero todos los puntos de control de dicha linea
+								guarda en distancias las distancias entre 
+								
+/**************************************************************************************************************************************************
+/******************************** LINEASTRXGEO ****************************************************************************************************
+/**************************************************************************************************************************************************
+							
+
+str -  LINEASTRXGEO construccion.sql								
+									MINDISTANCIA -- tabla que contiene en el campo min distancia la distancia que es menor a IDA o al VUELTA
+
+									DISTANCIACUADRADO  -- por cada linea - ramal calculo el MSE y el RMSE
+
+									LINEASTRXGEO  -- tabla que tiene la equivalencia entre la linea ramal MT y la linea ramal GEO
+												  -- solo toma a aquellas lineas que tienen mas de 50 puntos 
+												  
+											  
+python inicio.py -dist_RMSE 0 9999  --> calcula para las lineas que no tienen relacion en el archivo de shape todos los RMSE con todas las lineas del archivo para ver cual machea mejor												  
+												  
+srt - LINEASTRXGEO anexo.sql -- datos estadisticos del cruce entre las tablas de lineas de SUBE con las lineas de SHAPE
+								Incorpora a la tabla LINEASTRXGEO las lineas agregadas en el procedimiento de RMSE anterior
+								Etapa: 1 61 lineas seleccionadas por tener buen nivel de RMSE
+									   2 El resto de las lineas
+									   3 Lineas incluidas por el cruce masivo 
+
+/**************************************************************************************************************************************************
+/******************************** SIGNOS (mi parte insegura) esto se debe correr para los ptos de control antes de correr el destino **************
+/**************************************************************************************************************************************************
+												  
+python inicio.py -sign  --> asigna a punto de control el sentido de ida o de vuelta. Se modicó para que tome PTOCONTROL201505B 
+
+python inicio.py -sign_ag  -->< agrupa puntos de control de Ida y de vuelta para analizar el largo de los viajes
+
+tabla
+THE_VIAJES  --> tiene un registro por cada uso de colectivo, junto con los puntos de control anterior y siguiente.
+					ademas tiene un porcentaje de recorrido que representa en que porcentaje desde de el punto anterior al siguiente se encuentra
+					ademas tiene la latitud y la longitud de la proyeccion del viaje en el recorrido junto con la distancia dentro del recorrido en la que se encuentra.
+
+/**************************************************************************************************************************************************
+/******************************** PTOCONTROL ******************************************************************************************************
+/**************************************************************************************************************************************************
+
+ptocontrol201505_muestra -- 15.189.450 registros de los lotes que estan seleccionados para ser utilizados en la deteccion de paradas
+
+ptocontrol201505B		 -- 146.690.200 registros. Son todos los puntos de control de mayo de los lotes de la tabla the_lotes, esten o no seleccionados
+					
+/**************************************************************************************************************************************************
+/************* STOP ANALISIS ******** analisis para de determinar las paradas de colectivo, solo se corre una vez *********************************/
+/**************************************************************************************************************************************************
+
+NOTA: para la deteccion de las paradas de colectivo se una la tabla THE_VIAJES_MUESTRA, no debe confundirse con THE_VIAJESMAYO que contiene todos los viajes del mes
+
+
+python inicio.py -stop_proy	 --> graba en la tabla "proyeccionruta" los valores de latittud, longitud del viaje sobre la ruta, ademas guarda el porcentaje de la ruta en la que se encuentra (el llamado mile post).
+
+	str - the_viajes.sql  --> se corre un update desde donde se pasa n los registros guardados en proyeccionruta a los campos de la tabla de the_viajes.
+						  --> MEJORA, ssería bueno poder pasar el update a un proceso de python. Este cambio ya se hizo
+					  
+python inicio.py -stop_clus --> guarda en la tabla "clusters" el resultado de la corrida
+							
+python inicio.py -stop_det  --> guarda en la tabla "paradas" 
+
+
+PASOS PARA PROCESAR NUEVOS PUNTOS
+1_pegar nuevos viajes en la tabla viajes
+2_marcar los lotes selectted = 'D' segun los lotes nuevos	
+3_correr sentido
+4_ correr stop proy (proyecta todos los puntos de control sobre las rutas)
+
+
+PASOS PARA CORRER LAS PARADAS
+4_corer stop_proy
+5_correr stop_det
+6_stop_clus
+7_stop_matrix
+							
+							
+En el paper de zaho dice que cuando la linea de colectivo no tiene AVL (automaic vahicle location) hacen un buffer alrededor del recorrido del colectivo para ver cuantas esaciones de trenes pasan por el buffer. Si pasa una sola, le infieren esa como la para en caso de que haya mas de una 
+Cuando si tiene AVL el punto de abordaje se puede determinar mediante el cruce entre los dats de las transacciones con lo datos del GPS, y la estacion de trenes de desembarco se puede estimar como la estacion mas cerna a la parada de colectivo a la que ascendio posteriormente.
+
+En el grafico 9, se describe que una tarjeta se subio en ID20 en un tren, Green line y luego se tomo el colectivo 55.El tema es que el pasajero pudo haber combinado con otros trenes y haberse tomados el colectivo 55 en 3 posibles puntos.
+Pero luego gracias a cruce con los datos de AVL se puede determinar que en realidad subio en la estación 10543.
+
+El esquema iterativo itera primero por tarjeta, luego por dia y finalmente por segmento.
+	Luego hay algunos sub procedimientos, tren a trene, tren a bus, ultimo viaje del dia, and previous place
+	
+	Zaho 2004 - el algoritmo arranca ordenando los segmanetos por fecha hora, luego arranca por un segmento de tren y ejecuta los subprocesos t-t o t-b
+			  - para el algoritmo del ultimo viaje del dia, primero se fija si el origen del ultimo viaje es disinto al origen del primer viaje del dia.
+			  - no toma medianoche porque la curva dice que a las 3 de la mañana hay menos cantidad de viajes se produce a esa hora
+			  
+			  Ver la parte de basic statistic en la pagina 55.
+
+
+	
+
+
+lo primero que tenemos que decir es que solo vamos a tener en cuenta viajes BB (bus to bus). A lo largo del dia la persona tiene que hacer BB o BBB o BBBB
+
+
+
+
+									
+movimientotarjeta2 
+the_viajes
+
+
+Postgres:
+
+ROWPUNTOCONTROL
+
